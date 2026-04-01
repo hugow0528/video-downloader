@@ -1,0 +1,273 @@
+/* popup.css — Video Downloader Pro */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  width: 420px;
+  min-height: 200px;
+  max-height: 600px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* ── Header ──────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #181825;
+  border-bottom: 1px solid #313244;
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.header-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #cba6f7;
+}
+
+.header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: #a6adc8;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.icon-btn:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+
+/* ── Status bar ──────────────────────────── */
+
+.status-bar {
+  padding: 6px 12px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.status-bar.hidden {
+  display: none;
+}
+
+.status-info    { background: #1a3050; color: #89dceb; }
+.status-success { background: #1a3028; color: #a6e3a1; }
+.status-error   { background: #3a1e1e; color: #f38ba8; }
+
+/* ── Video list ──────────────────────────── */
+
+.video-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.video-list::-webkit-scrollbar        { width: 4px; }
+.video-list::-webkit-scrollbar-track  { background: #181825; }
+.video-list::-webkit-scrollbar-thumb  { background: #45475a; border-radius: 2px; }
+
+/* ── Empty state ─────────────────────────── */
+
+.empty-state {
+  text-align: center;
+  padding: 32px 16px;
+  color: #6c7086;
+}
+
+.empty-state p { margin-bottom: 8px; }
+
+.empty-state .hint {
+  font-size: 11px;
+  color: #585b70;
+  line-height: 1.5;
+}
+
+/* ── Video item card ─────────────────────── */
+
+.video-item {
+  background: #313244;
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid #45475a;
+}
+
+.video-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+}
+
+.video-title {
+  font-weight: 500;
+  color: #cdd6f4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-url {
+  font-size: 11px;
+  color: #6c7086;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: monospace;
+}
+
+.video-note {
+  font-size: 11px;
+  color: #f9e2af;
+  margin-top: 2px;
+}
+
+/* ── Type badges ─────────────────────────── */
+
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  width: fit-content;
+}
+
+.badge-m3u8    { background: #fab387; color: #1e1e2e; }
+.badge-youtube { background: #f38ba8; color: #1e1e2e; }
+.badge-mp4     { background: #a6e3a1; color: #1e1e2e; }
+.badge-webm    { background: #89dceb; color: #1e1e2e; }
+.badge-dash    { background: #cba6f7; color: #1e1e2e; }
+.badge-video   { background: #89b4fa; color: #1e1e2e; }
+.badge-flv     { background: #f9e2af; color: #1e1e2e; }
+.badge-mkv     { background: #94e2d5; color: #1e1e2e; }
+.badge-audio   { background: #f5c2e7; color: #1e1e2e; }
+.badge-avi     { background: #89b4fa; color: #1e1e2e; }
+
+/* ── Video actions ───────────────────────── */
+
+.video-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.btn-download,
+.btn-abort {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.btn-download {
+  background: #cba6f7;
+  color: #1e1e2e;
+}
+
+.btn-download:hover:not(:disabled) { opacity: 0.85; }
+
+.btn-download:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn-abort {
+  background: #f38ba8;
+  color: #1e1e2e;
+}
+
+.btn-abort:hover { opacity: 0.85; }
+
+/* ── Progress bar ────────────────────────── */
+
+.progress-bar {
+  flex: 1;
+  min-width: 80px;
+  height: 18px;
+  background: #45475a;
+  border-radius: 9px;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #cba6f7;
+  border-radius: 9px;
+  transition: width 0.25s ease;
+  width: 0%;
+}
+
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-weight: 700;
+  color: #1e1e2e;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ── Utility ─────────────────────────────── */
+
+.hidden { display: none !important; }
+
+/* ── Footer ──────────────────────────────── */
+
+.footer {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: #45475a;
+  border-top: 1px solid #313244;
+  text-align: center;
+  flex-shrink: 0;
+}

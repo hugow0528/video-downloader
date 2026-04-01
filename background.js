@@ -5,6 +5,14 @@
  * (MP4, WebM, M3U8/HLS playlists, DASH manifests, YouTube streams).
  * Stores detected URLs keyed by tab, updates the badge counter, and
  * responds to messages from the popup and content scripts.
+ *
+ * YouTube note:
+ *   YouTube uses adaptive streaming (DASH / HLS) which separates video
+ *   and audio into distinct streams identified by the "itag" URL
+ *   parameter.  All detected googlevideo.com streams are stored so the
+ *   popup can show the user which quality streams are available.
+ *   Merging separate video-only and audio-only streams requires an
+ *   external tool such as FFmpeg or yt-dlp.
  */
 
 // Map<tabId, Map<url, videoInfo>>
@@ -92,7 +100,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
  */
 function isVideoUrl(url) {
   try {
-    const pathname = new URL(url).pathname.toLowerCase();
+    const parsed   = new URL(url);
+    const pathname = parsed.pathname.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase();
+
     // Exclude individual TS segments; we want the m3u8 playlist instead
     if (pathname.endsWith('.ts')) return false;
 
@@ -100,9 +111,11 @@ function isVideoUrl(url) {
     if (videoExtensions.some((ext) => pathname.endsWith(ext))) return true;
 
     // Match common streaming URL patterns
-    if (url.includes('m3u8') || url.includes('.m3u')) return true;
-    // YouTube / googlevideo streams
-    if (url.includes('googlevideo.com') && url.includes('videoplayback')) return true;
+    if (pathname.includes('m3u8') || pathname.includes('.m3u')) return true;
+
+    // YouTube / googlevideo streams — match hostname exactly to avoid spoofing
+    if (isGooglevideo(hostname) && parsed.searchParams.has('videoplayback')) return true;
+    if (isGooglevideo(hostname) && pathname.includes('videoplayback')) return true;
 
     return false;
   } catch {
@@ -110,16 +123,32 @@ function isVideoUrl(url) {
   }
 }
 
+/** True only for legitimate *.googlevideo.com hostnames. */
+function isGooglevideo(hostname) {
+  return hostname === 'googlevideo.com' || hostname.endsWith('.googlevideo.com');
+}
+
+// YouTube audio-only itag values — streams with these itags carry no video track.
+const YOUTUBE_AUDIO_ITAGS = new Set(['139', '140', '141', '171', '172', '249', '250', '251']);
+
 function getVideoType(url) {
   try {
-    const pathname = new URL(url).pathname.toLowerCase();
-    if (pathname.endsWith('.m3u8') || pathname.endsWith('.m3u') || url.includes('m3u8')) return 'm3u8';
+    const parsed   = new URL(url);
+    const pathname = parsed.pathname.toLowerCase();
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (pathname.endsWith('.m3u8') || pathname.endsWith('.m3u') || pathname.includes('m3u8')) return 'm3u8';
     if (pathname.endsWith('.mpd')) return 'dash';
     if (pathname.endsWith('.mp4')) return 'mp4';
     if (pathname.endsWith('.webm')) return 'webm';
     if (pathname.endsWith('.flv')) return 'flv';
     if (pathname.endsWith('.mkv')) return 'mkv';
-    if (url.includes('googlevideo.com')) return 'youtube';
+    if (isGooglevideo(hostname)) {
+      // YouTube audio-only itags so the popup can warn accordingly
+      const itag = parsed.searchParams.get('itag');
+      if (itag && YOUTUBE_AUDIO_ITAGS.has(itag)) return 'audio';
+      return 'youtube';
+    }
     return 'video';
   } catch {
     return 'video';

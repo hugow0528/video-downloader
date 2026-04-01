@@ -11,9 +11,14 @@
  *  - Returns a Blob that can be turned into a download URL
  *
  * Usage (from popup.js):
- *   const dl = new M3U8Downloader(url, { onProgress });
+ *   const dl = new M3U8Downloader(url, { onProgress, headers });
  *   const blob = await dl.download();
  *   const objectUrl = URL.createObjectURL(blob);
+ *
+ * Options:
+ *   onProgress(done, total)  — called after each segment is downloaded
+ *   onStatus(msg)            — human-readable status messages
+ *   headers                  — extra request headers (e.g. { Referer: '...' })
  */
 
 class M3U8Downloader {
@@ -25,6 +30,8 @@ class M3U8Downloader {
     this.url = url;
     this.onProgress = options.onProgress || (() => {});
     this.onStatus = options.onStatus || (() => {});
+    /** Optional extra request headers (e.g. { Referer: 'https://example.com' }) */
+    this.headers = options.headers || {};
     this._aborted = false;
   }
 
@@ -151,7 +158,7 @@ class M3U8Downloader {
       let buf = await this._fetchArrayBuffer(seg.url);
 
       if (seg.key) {
-        const cryptoKey = await this._getDecryptionKey(seg.key.uri, keyCache, segments[i - 1]?.key?.uri);
+        const cryptoKey = await this._getDecryptionKey(seg.key.uri, keyCache);
         buf = await this._decrypt(buf, cryptoKey, seg.key, seg.sequenceNumber);
       }
 
@@ -162,7 +169,7 @@ class M3U8Downloader {
     return buffers;
   }
 
-  async _getDecryptionKey(keyUri, cache, prevUri) {
+  async _getDecryptionKey(keyUri, cache) {
     if (cache.has(keyUri)) return cache.get(keyUri);
     const keyBuf = await this._fetchArrayBuffer(keyUri);
     const key = await crypto.subtle.importKey('raw', keyBuf, { name: 'AES-CBC' }, false, ['decrypt']);
@@ -211,13 +218,13 @@ class M3U8Downloader {
   // ---- Fetch helpers ----
 
   async _fetchText(url) {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: this.headers });
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
     return res.text();
   }
 
   async _fetchArrayBuffer(url) {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: this.headers });
     if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
     return res.arrayBuffer();
   }
