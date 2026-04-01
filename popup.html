@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Video Downloader Pro</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <img src="icons/icon48.png" alt="" class="header-icon" />
+        <span class="header-title">Video Downloader Pro</span>
+      </div>
+      <div class="header-actions">
+        <button id="btn-refresh" class="icon-btn" title="Re-scan page for videos">
+          &#x21bb;
+        </button>
+        <button id="btn-clear" class="icon-btn" title="Clear detected videos">
+          &#x2715;
+        </button>
+      </div>
+    </header>
+
+    <!-- Status banner (hidden by default) -->
+    <div id="status-bar" class="status-bar hidden"></div>
+
+    <!-- Video list -->
+    <div id="video-list" class="video-list">
+      <div id="empty-state" class="empty-state">
+        <p>No videos detected yet.</p>
+        <p class="hint">Browse to a page that plays a video,<br />then click <strong>&#x21bb;</strong> or reopen this panel.</p>
+      </div>
+    </div>
+
+    <!-- Footer note -->
+    <footer class="footer">
+      <span>Detected on this tab. Videos update automatically.</span>
+    </footer>
+  </div>
+
+  <script src="m3u8-downloader.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
