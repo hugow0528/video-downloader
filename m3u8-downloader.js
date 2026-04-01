@@ -1,0 +1,242 @@
+/**
+ * m3u8-downloader.js
+ *
+ * Self-contained HLS / M3U8 downloader that runs entirely in the browser.
+ *
+ * Capabilities:
+ *  - Parses master playlists (multi-quality) and selects the highest bandwidth stream
+ *  - Parses media playlists and downloads every segment in order
+ *  - Decrypts AES-128 encrypted segments using the Web Crypto API
+ *  - Concatenates all segments into a single Uint8Array (raw MPEG-TS)
+ *  - Returns a Blob that can be turned into a download URL
+ *
+ * Usage (from popup.js):
+ *   const dl = new M3U8Downloader(url, { onProgress });
+ *   const blob = await dl.download();
+ *   const objectUrl = URL.createObjectURL(blob);
+ */
+
+class M3U8Downloader {
+  /**
+   * @param {string} url - The URL of the m3u8 playlist (master or media)
+   * @param {{ onProgress?: (done: number, total: number) => void, onStatus?: (msg: string) => void }} [options]
+   */
+  constructor(url, options = {}) {
+    this.url = url;
+    this.onProgress = options.onProgress || (() => {});
+    this.onStatus = options.onStatus || (() => {});
+    this._aborted = false;
+  }
+
+  abort() {
+    this._aborted = true;
+  }
+
+  // ---- Public API ----
+
+  async download() {
+    this.onStatus('Fetching playlist…');
+    const text = await this._fetchText(this.url);
+
+    let mediaUrl = this.url;
+    let mediaText = text;
+
+    if (this._isMasterPlaylist(text)) {
+      this.onStatus('Parsing master playlist…');
+      const variant = this._parseMasterPlaylist(text, this.url);
+      this.onStatus(`Selected stream: ${variant.resolution || ''} ${Math.round(variant.bandwidth / 1000)} kbps`);
+      mediaUrl = variant.url;
+      mediaText = await this._fetchText(mediaUrl);
+    }
+
+    this.onStatus('Parsing media playlist…');
+    const segments = this._parseMediaPlaylist(mediaText, mediaUrl);
+
+    if (segments.length === 0) {
+      throw new Error('No segments found in playlist.');
+    }
+
+    this.onStatus(`Downloading ${segments.length} segments…`);
+    const buffers = await this._downloadSegments(segments);
+
+    this.onStatus('Merging segments…');
+    const blob = this._concat(buffers);
+    this.onStatus('Done.');
+    return blob;
+  }
+
+  // ---- Playlist parsing ----
+
+  _isMasterPlaylist(text) {
+    return text.includes('#EXT-X-STREAM-INF');
+  }
+
+  /**
+   * Returns the highest-bandwidth variant stream.
+   * @returns {{ url: string, bandwidth: number, resolution: string }}
+   */
+  _parseMasterPlaylist(text, baseUrl) {
+    const lines = text.split('\n').map((l) => l.trim());
+    const variants = [];
+    let pending = null;
+
+    for (const line of lines) {
+      if (line.startsWith('#EXT-X-STREAM-INF:')) {
+        pending = {
+          bandwidth: parseInt(this._attr(line, 'BANDWIDTH') || '0', 10),
+          resolution: this._attr(line, 'RESOLUTION') || '',
+        };
+      } else if (pending && line && !line.startsWith('#')) {
+        variants.push({ ...pending, url: this._resolveUrl(line, baseUrl) });
+        pending = null;
+      }
+    }
+
+    if (variants.length === 0) {
+      throw new Error('No variant streams found in master playlist.');
+    }
+
+    return variants.sort((a, b) => b.bandwidth - a.bandwidth)[0];
+  }
+
+  /**
+   * Returns an array of segment descriptors.
+   * @returns {Array<{ url: string, sequenceNumber: number, key: object|null }>}
+   */
+  _parseMediaPlaylist(text, baseUrl) {
+    const lines = text.split('\n').map((l) => l.trim());
+    const segments = [];
+    let seq = 0;
+    let currentKey = null;
+
+    const seqMatch = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/);
+    if (seqMatch) seq = parseInt(seqMatch[1], 10);
+
+    for (const line of lines) {
+      if (line.startsWith('#EXT-X-KEY:')) {
+        const method = this._attr(line, 'METHOD');
+        if (method === 'AES-128') {
+          currentKey = {
+            method,
+            uri: this._attr(line, 'URI'),
+            iv: this._attr(line, 'IV'),
+          };
+        } else {
+          // METHOD=NONE
+          currentKey = null;
+        }
+      } else if (!line.startsWith('#') && line) {
+        segments.push({
+          url: this._resolveUrl(line, baseUrl),
+          sequenceNumber: seq++,
+          key: currentKey ? { ...currentKey } : null,
+        });
+      }
+    }
+
+    return segments;
+  }
+
+  // ---- Segment downloading ----
+
+  async _downloadSegments(segments) {
+    const buffers = [];
+    // Cache imported AES keys to avoid re-importing the same key for every segment
+    const keyCache = new Map();
+
+    for (let i = 0; i < segments.length; i++) {
+      if (this._aborted) throw new Error('Download aborted.');
+
+      const seg = segments[i];
+      let buf = await this._fetchArrayBuffer(seg.url);
+
+      if (seg.key) {
+        const cryptoKey = await this._getDecryptionKey(seg.key.uri, keyCache, segments[i - 1]?.key?.uri);
+        buf = await this._decrypt(buf, cryptoKey, seg.key, seg.sequenceNumber);
+      }
+
+      buffers.push(buf);
+      this.onProgress(i + 1, segments.length);
+    }
+
+    return buffers;
+  }
+
+  async _getDecryptionKey(keyUri, cache, prevUri) {
+    if (cache.has(keyUri)) return cache.get(keyUri);
+    const keyBuf = await this._fetchArrayBuffer(keyUri);
+    const key = await crypto.subtle.importKey('raw', keyBuf, { name: 'AES-CBC' }, false, ['decrypt']);
+    cache.set(keyUri, key);
+    return key;
+  }
+
+  async _decrypt(buffer, cryptoKey, keyInfo, sequenceNumber) {
+    let iv;
+    if (keyInfo.iv) {
+      const hex = keyInfo.iv.replace(/^0x/i, '').padStart(32, '0');
+      iv = new Uint8Array(hex.match(/.{2}/g).map((b) => parseInt(b, 16)));
+    } else {
+      // Default IV = sequence number as 16-byte big-endian integer
+      iv = new Uint8Array(16);
+      new DataView(iv.buffer).setUint32(12, sequenceNumber >>> 0, false);
+    }
+
+    try {
+      return await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, cryptoKey, buffer);
+    } catch (err) {
+      // Some segments have PKCS7 padding stripped; retry with a zero-padded buffer
+      if (buffer.byteLength % 16 !== 0) {
+        const padded = new Uint8Array(Math.ceil(buffer.byteLength / 16) * 16);
+        padded.set(new Uint8Array(buffer));
+        return await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, cryptoKey, padded.buffer);
+      }
+      throw err;
+    }
+  }
+
+  // ---- Buffer utilities ----
+
+  _concat(buffers) {
+    const total = buffers.reduce((s, b) => s + b.byteLength, 0);
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const buf of buffers) {
+      out.set(new Uint8Array(buf), offset);
+      offset += buf.byteLength;
+    }
+    // MPEG-TS output; most players handle .ts and .mp4 extension for raw TS
+    return new Blob([out], { type: 'video/mp2t' });
+  }
+
+  // ---- Fetch helpers ----
+
+  async _fetchText(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+    return res.text();
+  }
+
+  async _fetchArrayBuffer(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+    return res.arrayBuffer();
+  }
+
+  // ---- URL / attribute utilities ----
+
+  _resolveUrl(url, base) {
+    if (/^https?:\/\//i.test(url)) return url;
+    try {
+      return new URL(url, base).href;
+    } catch {
+      return url;
+    }
+  }
+
+  _attr(line, name) {
+    const re = new RegExp(`(?:^|,)${name}=("[^"]*"|[^,]*)`, 'i');
+    const m = line.match(re);
+    if (!m) return null;
+    return m[1].replace(/^"|"$/g, '');
+  }
+}
