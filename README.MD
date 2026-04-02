@@ -13,10 +13,11 @@
 4. [Supported video types](#4-supported-video-types)
 5. [Downloading HLS / M3U8 streams](#5-downloading-hls--m3u8-streams)
 6. [YouTube downloads](#6-youtube-downloads)
-7. [Converting `.ts` files to `.mp4`](#7-converting-ts-files-to-mp4)
-8. [Known limitations](#8-known-limitations)
-9. [Troubleshooting](#9-troubleshooting)
-10. [Technical notes](#10-technical-notes)
+7. [Copy yt-dlp Command](#7-copy-yt-dlp-command)
+8. [Converting `.ts` files to `.mp4`](#8-converting-ts-files-to-mp4)
+9. [Known limitations](#9-known-limitations)
+10. [Troubleshooting](#10-troubleshooting)
+11. [Technical notes](#11-technical-notes)
 
 ---
 
@@ -29,11 +30,13 @@
 | Detect and download HLS / M3U8 streaming video (any site) | ✅ |
 | Decrypt AES-128 encrypted HLS segments | ✅ |
 | Auto-select highest-quality HLS variant stream | ✅ |
+| Auto-detect fMP4/CMAF segments and save directly as `.mp4` | ✅ |
 | Detect YouTube video streams (googlevideo.com) | ✅ |
 | Show YouTube stream quality and itag labels | ✅ |
 | Detect M3U8 URLs embedded in JavaScript players | ✅ |
 | Live download progress bar for HLS streams | ✅ |
-| Merge separate audio + video streams in-browser | ❌ (requires FFmpeg — see §7) |
+| **Copy yt-dlp command to clipboard (one click)** | ✅ |
+| Merge separate audio + video streams in-browser | ❌ (use the 📋 yt-dlp button — see §7) |
 | Download DRM-protected content (Widevine, PlayReady) | ❌ (browser limitation) |
 
 ---
@@ -98,10 +101,13 @@ the *Video Downloader Pro* card.
    `45% (450/1000 segments)`.  
    Click **✕ Cancel** at any time to abort.
 
-6. **↺** (Refresh) re-injects the page scanner — useful after the video
+6. Click **📋 yt-dlp** to copy the correct yt-dlp command for any detected
+   video to your clipboard (see §7).
+
+7. **↺** (Refresh) re-injects the page scanner — useful after the video
    starts playing or after page-level navigation in an SPA.
 
-7. **✕** (Clear) removes all entries for the current tab.
+8. **✕** (Clear) removes all entries for the current tab.
 
 ---
 
@@ -109,7 +115,7 @@ the *Video Downloader Pro* card.
 
 | Badge | Meaning | Download method |
 |---|---|---|
-| `HLS / M3U8` | HLS playlist (any site) | Segment-by-segment download, concatenated to `.ts` |
+| `HLS / M3U8` | HLS playlist (any site) | Segment-by-segment download; auto-saved as `.mp4` (fMP4 streams) or `.ts` (MPEG-TS streams) |
 | `MP4` | Direct MP4 file | `chrome.downloads` — browser's native save dialog |
 | `WEBM` | Direct WebM file | `chrome.downloads` |
 | `FLV` | Flash Video file | `chrome.downloads` |
@@ -130,17 +136,19 @@ The extension handles it entirely in-browser:
    is detected, the extension automatically picks the **highest-bandwidth
    variant**.
 
-2. **Segment download** — every `.ts` segment is fetched sequentially.
+2. **Segment download** — every segment is fetched sequentially.
 
 3. **AES-128 decryption** — encrypted segments are decrypted with the
    Web Crypto API using the key URL from `#EXT-X-KEY`.
 
-4. **Concatenation** — all segments are joined into a single binary blob
-   and saved as a `.ts` file.
-
-> **Output format:** The saved file has a `.ts` extension (MPEG Transport
-> Stream).  Most media players (VLC, mpv, PotPlayer) can play `.ts`
-> directly.  To convert to a standard `.mp4` see §7.
+4. **Container auto-detection** — the extension inspects the first segment
+   to determine whether the stream uses:
+   * **fMP4 / CMAF** — modern HLS streams.  Segments are concatenated
+     and saved directly as a **`.mp4`** file that plays in any media
+     player without conversion.
+   * **MPEG-TS** — legacy HLS streams.  Segments are concatenated and
+     saved as a **`.ts`** file.  Most players (VLC, mpv, PotPlayer) can
+     play `.ts` directly.  To convert to a standard `.mp4` see §8.
 
 ---
 
@@ -160,27 +168,15 @@ its quality label, derived from the YouTube `itag` parameter:
 | Example label | Meaning |
 |---|---|
 | `720p MP4 (video+audio)` | Combined stream — safe to download directly |
-| `1080p MP4 (video only)` | Video-only stream — needs FFmpeg merge |
-| `128 kbps M4A (audio only)` | Audio-only stream — needs FFmpeg merge |
+| `1080p MP4 (video only)` | Video-only stream — use 📋 yt-dlp button |
+| `128 kbps M4A (audio only)` | Audio-only stream — use 📋 yt-dlp button |
 
-### Recommended workflow for YouTube
+### Recommended workflow for YouTube (> 720p or merged output)
 
-For a proper download with merged audio and video (especially 1080p+),
-use **yt-dlp** on the command line:
-
-```bash
-# Install (macOS / Linux)
-pip install yt-dlp          # or: brew install yt-dlp
-
-# Install (Windows)
-winget install yt-dlp
-
-# Download best quality video + audio merged into MP4
-yt-dlp -f "bestvideo+bestaudio" --merge-output-format mp4 "https://www.youtube.com/watch?v=VIDEO_ID"
-
-# Download at a specific resolution
-yt-dlp -f "bestvideo[height<=1080]+bestaudio" --merge-output-format mp4 "URL"
-```
+Click the **📋 yt-dlp** button next to any YouTube stream.  The correct
+`yt-dlp` command (targeting the YouTube watch-page URL) is copied to your
+clipboard.  Paste it in a terminal to download the best quality merged
+video (see §7 for full details).
 
 ### Combined-stream download (≤ 720p)
 
@@ -189,9 +185,51 @@ click **⬇ Download** to save it directly — no merging needed.
 
 ---
 
-## 7. Converting `.ts` files to `.mp4`
+## 7. Copy yt-dlp Command
 
-HLS downloads are saved as raw MPEG Transport Stream (`.ts`) files.
+Every detected video has a **📋 yt-dlp** button.  Clicking it copies a
+ready-to-paste `yt-dlp` command to your clipboard.
+
+| Video type | Generated command |
+|---|---|
+| YouTube (any quality) | `yt-dlp -f "bestvideo+bestaudio" --merge-output-format mp4 "<watch-page URL>"` |
+| HLS / M3U8 | `yt-dlp "<m3u8 URL>"` |
+| Any other URL | `yt-dlp "<URL>"` |
+
+### Installing yt-dlp
+
+```bash
+# macOS / Linux
+pip install yt-dlp          # or: brew install yt-dlp
+
+# Windows
+winget install yt-dlp
+```
+
+### Common yt-dlp recipes
+
+```bash
+# Best quality video + audio merged into MP4 (YouTube, Twitch, 1000s of sites)
+yt-dlp -f "bestvideo+bestaudio" --merge-output-format mp4 "URL"
+
+# Cap resolution at 1080p
+yt-dlp -f "bestvideo[height<=1080]+bestaudio" --merge-output-format mp4 "URL"
+
+# Download a specific quality
+yt-dlp -f 137+140 --merge-output-format mp4 "URL"
+
+# List all available formats
+yt-dlp -F "URL"
+```
+
+> **Note:** yt-dlp requires **FFmpeg** to merge separate video and audio
+> streams.  Install FFmpeg first (see §8).
+
+---
+
+## 8. Converting `.ts` files to `.mp4`
+
+Legacy HLS streams (MPEG-TS segments) are saved as `.ts` files.
 Convert to `.mp4` with **FFmpeg** (lossless, near-instant):
 
 ```bash
@@ -207,21 +245,23 @@ ffmpeg -i video.ts -c copy video.mp4
 ffmpeg -i video_only.mp4 -i audio_only.m4a -c copy merged.mp4
 ```
 
+> **Tip:** Modern HLS streams that use fMP4/CMAF segments are saved
+> directly as `.mp4` by the extension — no conversion needed.
+
 ---
 
-## 8. Known limitations
+## 9. Known limitations
 
 | Limitation | Reason |
 |---|---|
-| Cannot merge video+audio in-browser | No FFmpeg-equivalent runs in a MV3 service worker without a 30 MB+ WASM bundle |
+| Cannot merge video+audio in-browser | No FFmpeg-equivalent runs in a MV3 service worker without a 30 MB+ WASM bundle — use the 📋 yt-dlp button instead |
 | DRM-protected content (Netflix, Disney+, etc.) | Browser blocks `captureStream()` on encrypted video elements |
 | Some M3U8 downloads may fail with CORS errors | The streaming server rejects requests without a matching `Referer` or auth token |
-| YouTube high-quality (>720p) requires yt-dlp | Only video+audio combined streams can be saved directly |
 | Requires manual loading (no Web Store listing) | Extension is in developer/unpacked mode |
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 **No videos detected**
 
@@ -239,7 +279,7 @@ ffmpeg -i video_only.mp4 -i audio_only.m4a -c copy merged.mp4
 **`.ts` file won't play**
 
 * Open it in **VLC** or **mpv**, both of which support MPEG-TS natively.  
-* Or convert with FFmpeg (see §7).
+* Or convert with FFmpeg (see §8).
 
 **YouTube streams not detected**
 
@@ -253,9 +293,15 @@ ffmpeg -i video_only.mp4 -i audio_only.m4a -c copy merged.mp4
 * The service worker was restarted.  Reload the extension at
   `chrome://extensions` and refresh the page.
 
+**📋 yt-dlp button copied the wrong URL**
+
+* For YouTube videos the command always targets the watch-page URL
+  (e.g. `https://www.youtube.com/watch?v=…`).  If you are on a different
+  tab, open the YouTube page first, then click the button.
+
 ---
 
-## 10. Technical notes
+## 11. Technical notes
 
 ### Architecture
 
@@ -281,7 +327,8 @@ ffmpeg -i video_only.mp4 -i audio_only.m4a -c copy merged.mp4
 │  m3u8-downloader.js  (loaded in popup context)           │
 │  • Fetches & parses master + media playlists             │
 │  • Downloads segments in order (with optional AES-128)   │
-│  • Returns a Blob (video/mp2t) for browser save          │
+│  • Detects fMP4 vs MPEG-TS → saves as .mp4 or .ts        │
+│  • Returns a Blob (video/mp4 or video/mp2t)              │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -294,7 +341,7 @@ ffmpeg -i video_only.mp4 -i audio_only.m4a -c copy merged.mp4
 | `content.js` | Page scanner — DOM video elements + inline script scan |
 | `m3u8-downloader.js` | Self-contained HLS downloader (popup context) |
 | `popup.html` | Popup shell HTML |
-| `popup.js` | Popup logic — render, download, progress |
+| `popup.js` | Popup logic — render, download, progress, copy yt-dlp command |
 | `popup.css` | Popup styling (dark theme) |
 | `icons/` | Extension icons (16 × 16, 48 × 48, 128 × 128 PNG) |
 
@@ -308,3 +355,4 @@ ffmpeg -i video_only.mp4 -i audio_only.m4a -c copy merged.mp4
 | `tabs` | Identify the active tab to scope detected videos |
 | `scripting` | Re-inject content.js on Refresh button click |
 | `host_permissions: <all_urls>` | Allow cross-origin fetch in popup (for M3U8 segments) |
+| `clipboard-write` (implicit) | Used by the 📋 yt-dlp copy button via `navigator.clipboard` |

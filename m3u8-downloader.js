@@ -33,6 +33,11 @@ class M3U8Downloader {
     /** Optional extra request headers (e.g. { Referer: 'https://example.com' }) */
     this.headers = options.headers || {};
     this._aborted = false;
+    /**
+     * Set to true after download() if segments were detected as fragmented MP4
+     * (CMAF/fMP4).  Callers should use '.mp4' as the output extension in that case.
+     */
+    this.isFmp4 = false;
   }
 
   abort() {
@@ -157,6 +162,13 @@ class M3U8Downloader {
       const seg = segments[i];
       let buf = await this._fetchArrayBuffer(seg.url);
 
+      // Detect container format from the first segment.
+      // MPEG-TS starts with 0x47; fMP4/CMAF boxes start with a 4-byte size
+      // followed by a 4-byte type such as 'ftyp', 'styp', 'moof', or 'moov'.
+      if (i === 0) {
+        this.isFmp4 = this._isFmp4Buffer(buf);
+      }
+
       if (seg.key) {
         const cryptoKey = await this._getDecryptionKey(seg.key.uri, keyCache);
         buf = await this._decrypt(buf, cryptoKey, seg.key, seg.sequenceNumber);
@@ -167,6 +179,29 @@ class M3U8Downloader {
     }
 
     return buffers;
+  }
+
+  /**
+   * Returns true when the buffer looks like a fragmented MP4 (fMP4 / CMAF)
+   * segment rather than a raw MPEG-TS segment.
+   * @param {ArrayBuffer} buffer
+   * @returns {boolean}
+   */
+  _isFmp4Buffer(buffer) {
+    if (buffer.byteLength < 8) return false;
+    const bytes = new Uint8Array(buffer, 0, 8);
+    // MPEG-TS sync byte is 0x47 — if the first byte is that, it is TS.
+    if (bytes[0] === 0x47) return false;
+    // fMP4/CMAF boxes always start with a 4-byte box size followed by a 4-byte
+    // box type.  The box types below are the only ones that can legally appear
+    // as the first box of an fMP4 segment:
+    //   'ftyp' — File Type Box (init segment)
+    //   'styp' — Segment Type Box (media segment)
+    //   'moof' — Movie Fragment Box (media segment without a styp)
+    //   'moov' — Movie Box (init-only stream)
+    //   'emsg' — Event Message Box (DASH inband events, rare but valid)
+    const boxType = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
+    return ['ftyp', 'styp', 'moof', 'moov', 'emsg'].includes(boxType);
   }
 
   async _getDecryptionKey(keyUri, cache) {
@@ -211,8 +246,10 @@ class M3U8Downloader {
       out.set(new Uint8Array(buf), offset);
       offset += buf.byteLength;
     }
-    // MPEG-TS output; most players handle .ts and .mp4 extension for raw TS
-    return new Blob([out], { type: 'video/mp2t' });
+    // Use the MIME type that matches the detected container format.
+    // fMP4/CMAF segments are saved as video/mp4; raw MPEG-TS as video/mp2t.
+    const mimeType = this.isFmp4 ? 'video/mp4' : 'video/mp2t';
+    return new Blob([out], { type: mimeType });
   }
 
   // ---- Fetch helpers ----
