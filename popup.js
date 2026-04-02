@@ -57,6 +57,7 @@
   // ---- State ----
 
   let currentTabId = null;
+  let currentTabUrl = '';
   /** @type {Map<string, M3U8Downloader>} url → active downloader */
   const activeDownloaders = new Map();
 
@@ -80,6 +81,7 @@
   async function init() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     currentTabId = tab.id;
+    currentTabUrl = tab.url || '';
     await loadVideos();
   }
 
@@ -132,12 +134,14 @@
           <span class="progress-text">0%</span>
         </div>
         <button class="btn-download">⬇ Download</button>
+        <button class="btn-copy-cmd" title="Copy yt-dlp command to clipboard">📋 yt-dlp</button>
         <button class="btn-abort hidden">✕ Cancel</button>
       </div>
     `;
 
     item.querySelector('.btn-download').addEventListener('click', () => handleDownload(video, item));
     item.querySelector('.btn-abort').addEventListener('click', () => handleAbort(video.url, item));
+    item.querySelector('.btn-copy-cmd').addEventListener('click', () => handleCopyCmd(video));
 
     return item;
   }
@@ -211,8 +215,12 @@
 
       try {
         const blob = await dl.download();
-        triggerBlobDownload(blob, baseName + '.ts');
-        showStatus('Download complete! (saved as .ts — convert with FFmpeg for .mp4)', 'success');
+        const ext = dl.isFmp4 ? '.mp4' : '.ts';
+        triggerBlobDownload(blob, baseName + ext);
+        const msg = dl.isFmp4
+          ? 'Download complete! (saved as .mp4)'
+          : 'Download complete! (saved as .ts — convert with FFmpeg for .mp4)';
+        showStatus(msg, 'success');
       } catch (err) {
         if (err.message === 'Download aborted.') {
           showStatus('Download cancelled.', 'info');
@@ -247,6 +255,55 @@
   function handleAbort(url, item) {
     const dl = activeDownloaders.get(url);
     if (dl) dl.abort();
+  }
+
+  /**
+   * Copies an appropriate yt-dlp command to the clipboard for the given video.
+   * For YouTube streams the command targets the watch-page URL (the current tab)
+   * so yt-dlp can fetch and merge both video and audio automatically.
+   */
+  function handleCopyCmd(video) {
+    const cmd = getYtdlpCommand(video);
+    navigator.clipboard.writeText(cmd).then(() => {
+      showStatus('yt-dlp command copied to clipboard!', 'success');
+    }).catch(() => {
+      // Fallback: show the command in the status bar so the user can copy it manually
+      showStatus('Copy: ' + cmd, 'info');
+    });
+  }
+
+  /**
+   * Returns a yt-dlp command string appropriate for the given video.
+   * @param {{ type: string, url: string }} video
+   * @returns {string}
+   */
+  function getYtdlpCommand(video) {
+    const { type, url } = video;
+
+    if (type === 'youtube' || type === 'audio') {
+      // Prefer the YouTube watch-page URL so yt-dlp can handle auth, quality
+      // selection, and audio+video merging automatically.
+      const pageUrl = isYouTubePageUrl(currentTabUrl) ? currentTabUrl : url;
+      return `yt-dlp -f "bestvideo+bestaudio" --merge-output-format mp4 "${pageUrl}"`;
+    }
+
+    if (type === 'm3u8') {
+      return `yt-dlp "${url}"`;
+    }
+
+    // Generic fallback — yt-dlp supports hundreds of sites
+    return `yt-dlp "${url}"`;
+  }
+
+  /** Returns true only when the URL's hostname is youtube.com or a subdomain. */
+  function isYouTubePageUrl(url) {
+    try {
+      const { hostname } = new URL(url);
+      return hostname === 'youtube.com' || hostname === 'www.youtube.com' ||
+             hostname.endsWith('.youtube.com');
+    } catch {
+      return false;
+    }
   }
 
   // ---- Utilities ----

@@ -195,7 +195,8 @@ body {
 }
 
 .btn-download,
-.btn-abort {
+.btn-abort,
+.btn-copy-cmd {
   padding: 4px 10px;
   border-radius: 4px;
   border: none;
@@ -224,6 +225,14 @@ body {
 }
 
 .btn-abort:hover { opacity: 0.85; }
+
+.btn-copy-cmd {
+  background: #313244;
+  color: #89dceb;
+  border: 1px solid #45475a;
+}
+
+.btn-copy-cmd:hover { background: #45475a; }
 
 /* ── Progress bar ────────────────────────── */
 
