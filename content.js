@@ -5,8 +5,12 @@
  * then reports each discovered URL to the background service worker so
  * it can be shown in the popup.
  *
- * A MutationObserver is attached so that late-loaded video elements
- * (e.g., in SPAs or infinite-scroll pages) are also captured.
+ * Also scans inline <script> blocks for embedded M3U8 / HLS URLs
+ * (common in video.js and similar players).
+ *
+ * A debounced MutationObserver is attached so that late-loaded video
+ * elements (e.g., in SPAs or infinite-scroll pages) are also captured
+ * without triggering excessive work on every DOM mutation.
  */
 
 (function () {
@@ -66,12 +70,39 @@
     document.querySelectorAll('video').forEach((el) => {
       if (el.currentSrc) reportVideo(el.currentSrc);
     });
+
+    // Scan inline <script> blocks for embedded M3U8 / HLS URLs
+    // (video.js, hls.js, and similar players often embed the URL as a string)
+    document.querySelectorAll('script:not([src])').forEach((el) => {
+      const text = el.textContent || '';
+      const m3u8Re = /https?:\/\/[^\s"'`]+\.m3u8[^\s"'`]*/gi;
+      let match;
+      while ((match = m3u8Re.exec(text)) !== null) {
+        reportVideo(match[0], 'm3u8');
+      }
+    });
+  }
+
+  /** Debounce delay (ms) for the MutationObserver — avoids calling scanPage on every DOM mutation. */
+  const SCAN_DEBOUNCE_MS = 300;
+
+  // ----- Debounced MutationObserver -----
+
+  let _scanTimer = null;
+  function scheduleScan() {
+    clearTimeout(_scanTimer);
+    _scanTimer = setTimeout(scanPage, SCAN_DEBOUNCE_MS);
   }
 
   // Initial scan
   scanPage();
 
   // Watch for dynamically added/modified video elements
-  const observer = new MutationObserver(() => scanPage());
-  observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+  const observer = new MutationObserver(scheduleScan);
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['src'],
+  });
 })();
